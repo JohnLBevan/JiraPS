@@ -43,7 +43,7 @@ InModuleScope PSJira {
             It "Correctly performs all necessary HTTP method requests [$($validMethods -join ',')] to a provided URI" {
                 foreach ($method in $validMethods) {
                     { Invoke-JiraMethod -Method $method -URI $testUri } | Should Not Throw
-                    Assert-MockCalled -CommandName Invoke-WebRequest -ParameterFilter {$Method -eq $method -and $Uri -eq $testUri} -Scope It
+                    Assert-MockCalled -CommandName Invoke-WebRequest -ParameterFilter {$Method -eq $method -and (CompareUri $Uri (AppendPaging $testUri)) -eq 0} -Scope It
                 }
             }
 
@@ -419,13 +419,13 @@ InModuleScope PSJira {
 
             It "Outputs an object representation of JSON returned from JIRA" {
 
-                Mock Invoke-WebRequest -ParameterFilter {$Method -eq 'Get' -and $Uri -eq $validTestUri} {
+                Mock Invoke-WebRequest -ParameterFilter {$Method -eq 'Get' -and (CompareUri $Uri (AppendPaging $validTestUri)) -eq 0} {
                     ShowMockInfo 'Invoke-WebRequest' -Params 'Uri', 'Method'
                     Write-Output [PSCustomObject] @{
                         'Content' = $validRestResult
                     }
                 }
-
+                write-verbose (AppendPaging $testUri) -Verbose
                 $result = Invoke-JiraMethod -Method Get -URI $validTestUri
                 $result | Should Not BeNullOrEmpty
 

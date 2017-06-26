@@ -1,6 +1,6 @@
 function Invoke-JiraMethod {
     #Requires -Version 3
-    [CmdletBinding(DefaultParameterSetName = 'UseCredential')]
+    [CmdletBinding(DefaultParameterSetName = 'UseCredential', SupportsPaging = $true)]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -8,7 +8,7 @@ function Invoke-JiraMethod {
         [String] $Method,
 
         [Parameter(Mandatory = $true)]
-        [String] $URI,
+        [String] $Uri,
 
         [ValidateNotNullOrEmpty()]
         [String] $Body,
@@ -49,8 +49,28 @@ function Invoke-JiraMethod {
         }
     }
 
+
+    [System.UriBuilder]$UriBuilder = New-Object -TypeName 'System.UriBuilder' -ArgumentList $Uri
+    [System.Collections.Specialized.NameValueCollection]$Query = [System.Web.HttpUtility]::ParseQueryString($UriBuilder.Query)
+ 
+    #region "Paging"
+    if ($PSCmdlet.PagingParameters.Skip) 
+    {
+        $Query['startAt'] = $PSCmdlet.PagingParameters.Skip
+    }
+    if ($PSCmdlet.PagingParameters.First) #this will likely always be true since defaults to [uint64]::MaxValue, but potentially a user may pass value 0?
+    {
+        $Query['maxResults'] = $PSCmdlet.PagingParameters.First
+    }
+    #endregion "Paging"
+
+    $UriBuilder.Query = $Query.ToString()
+    #todo: \remove these before checking in\
+    write-verbose "JB >> URI: $URI" -verbose
+    write-verbose "JB >> Builder: $($UriBuilder.ToString())" -verbose
+    #todo: /remove these before checking in/
     $iwrSplat = @{
-        Uri             = $Uri
+        Uri             = ($UriBuilder.ToString())
         Headers         = $headers
         Method          = $Method
         ContentType     = 'application/json; charset=utf-8'
