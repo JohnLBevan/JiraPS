@@ -118,7 +118,7 @@ function AppendPaging($Uri, [uint64]$startAt = 0, [uint64]$maxResults = [uint64]
     {
         $Query['startAt'] = $startAt
     }
-    if ($maxResults) 
+    if ($maxResults -and ($maxResults -ne [uint64]::MaxValue)) 
     {
         $Query['maxResults'] = $maxResults
     }

@@ -54,13 +54,21 @@ function Invoke-JiraMethod {
     [System.Collections.Specialized.NameValueCollection]$Query = [System.Web.HttpUtility]::ParseQueryString($UriBuilder.Query)
  
     #region "Paging"
+    [uint64]$actualPageSize = 50 #this is the default page size for all Atlassian web services.  i.e. if no paging parameters are specified on the URI, this is what we'd get
     if ($PSCmdlet.PagingParameters.Skip) 
     {
         $Query['startAt'] = $PSCmdlet.PagingParameters.Skip
     }
-    if ($PSCmdlet.PagingParameters.First) #this will likely always be true since defaults to [uint64]::MaxValue, but potentially a user may pass value 0?
+    if ($PSCmdlet.PagingParameters.First -and ($PSCmdlet.PagingParameters.First  -ne [uint64]::MaxValue)) #if paging is not specified, continue with default behaviour (i.e. page size of 50) to ensure this is not a breaking change
     {
+        if ($PSCmdlet.PagingParameters.First -gt 1000) #Limit of the web API https://confluence.atlassian.com/jirakb/changing-maxresults-parameter-for-jira-rest-api-779160706.html
+        {
+            #for now, if limit exceeded throw exception
+            #in future version, consider having function call itself N times to have this function satisfy the page size requirement whilst following the hard limit for the web api
+            throw (New-Object -TypeName 'ArgumentException' -ArgumentList "The Atlassian API page size has a hard limit of 1000.  You specified $($PSCmdlet.PagingParameters.First).")
+        }
         $Query['maxResults'] = $PSCmdlet.PagingParameters.First
+        $actualPageSize = $PSCmdlet.PagingParameters.First
     }
     #endregion "Paging"
 
@@ -118,6 +126,29 @@ function Invoke-JiraMethod {
             if ($webResponse.Content) {
                 Write-Debug "[Invoke-JiraMethod] Converting body of response from JSON"
                 $result = ConvertFrom-Json2 -InputObject $webResponse.Content
+
+                #region "Paging Total"
+                If ($PSCmdlet.PagingParameters.IncludeTotalCount) {
+                    if ($result.psobject.Properties['startAt'] -and $result.psobject.Properties['maxResults'] -and $result.psobject.Properties['total'])
+                    {
+                        #if we have a paging total we can use it.  This if checks for the related paging fields to make sure the `total` returned is the paging one / not some property of another object from a method which does not support paging.  https://docs.atlassian.com/jira/REST/cloud/
+                        $PSCmdlet.PagingParameters.NewTotalCount($result.total, 1.0)
+                    }
+                    else
+                    {
+                        #if our root object doesn't contain paging properties, assume that the root is an array of actual results
+                        if ($actualPageSize -gt $result.Count) 
+                        {
+                            $PSCmdlet.PagingParameters.NewTotalCount($result.Count + ($PSCmdlet.PagingParameters.Skip), 1.0)
+                        }
+                        else
+                        {
+                            $PSCmdlet.PagingParameters.NewTotalCount($result.Count + ($PSCmdlet.PagingParameters.Skip) + 1, 0.01) #we know we've got at least (Count + Skip) results; so better than 0 probability on this estimate; but nowhere near 1.0.  Added 1 to this estimate so that it's clear that the user request more data (i.e. there's always at least 1 more record to get until we get the real figure)
+                            #have asked for advice on how estimates should work (amongst other things) here: https://codereview.stackexchange.com/questions/164252/powershell-supports-paging
+                        }
+                    }
+                }
+                #end region "Paging Total"
             }
             else {
                 Write-Debug "[Invoke-JiraMethod] No content was returned from JIRA."
